@@ -241,6 +241,9 @@
               <property name="text">
                <string>Smazat</string>
               </property>
+              <property name="shortcut">
+               <string>Del</string>
+              </property>
              </widget>
             </item>
            </layout>
@@ -585,8 +588,13 @@
     </property>
     <addaction name="actionExportCSV"/>
     <addaction name="actionExportCSV1"/>
+    <addaction name="actionExportCSV2"/>
+    <addaction name="actionExportCSV3"/>
+    <addaction name="separator"/>
     <addaction name="actionExportHTML"/>
     <addaction name="actionExportHTML1"/>
+    <addaction name="actionExportHTML2"/>
+    <addaction name="actionExportHTML3"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuResults"/>
@@ -640,6 +648,38 @@
    </property>
    <property name="text">
     <string>Exportovat do HTML (dle kategorie)</string>
+   </property>
+  </action>
+  <action name="actionExportCSV2">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Exportovat výběr do CSV (v pořadí)</string>
+   </property>
+  </action>
+  <action name="actionExportHTML2">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Exportovat výběr do HTML (v pořadí)</string>
+   </property>
+  </action>
+  <action name="actionExportCSV3">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Exportovat výběr do CSV (dle kategorie)</string>
+   </property>
+  </action>
+  <action name="actionExportHTML3">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Exportovat výběr do HTML (dle kategorie)</string>
    </property>
   </action>
  </widget>

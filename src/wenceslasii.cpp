@@ -85,8 +85,12 @@ WenceslasII::WenceslasII(QWidget* parent) :
     connect(ui->actionImport, &QAction::triggered, this, &WenceslasII::importFile);
     connect(ui->actionExportCSV, &QAction::triggered, this, &WenceslasII::actionExportCSV);
     connect(ui->actionExportCSV1, &QAction::triggered, this, &WenceslasII::actionExportCSV1);
+    connect(ui->actionExportCSV2, &QAction::triggered, this, &WenceslasII::actionExportCSV2);
+    connect(ui->actionExportCSV3, &QAction::triggered, this, &WenceslasII::actionExportCSV3);
     connect(ui->actionExportHTML, &QAction::triggered, this, &WenceslasII::actionExportHTML);
     connect(ui->actionExportHTML1, &QAction::triggered, this, &WenceslasII::actionExportHTML1);
+    connect(ui->actionExportHTML2, &QAction::triggered, this, &WenceslasII::actionExportHTML2);
+    connect(ui->actionExportHTML3, &QAction::triggered, this, &WenceslasII::actionExportHTML3);
     
     // Setup buttons
     connect(ui->create, &QPushButton::clicked, this, &WenceslasII::createRecord);
@@ -250,8 +254,12 @@ void WenceslasII::enableButtons()
     ui->actionImport->setEnabled(true);
     ui->actionExportCSV->setEnabled(true);
     ui->actionExportCSV1->setEnabled(true);
+    ui->actionExportCSV2->setEnabled(true);
+    ui->actionExportCSV3->setEnabled(true);
     ui->actionExportHTML->setEnabled(true);
     ui->actionExportHTML1->setEnabled(true);
+    ui->actionExportHTML2->setEnabled(true);
+    ui->actionExportHTML3->setEnabled(true);
 }
 
 void WenceslasII::setupRegTable()
@@ -290,7 +298,7 @@ void WenceslasII::setupRegTable()
     // Setup table view
     ui->regTable->setModel(regSortProxy);
     ui->regTable->setSortingEnabled(true);
-    ui->regTable->sortByColumn(-1, Qt::SortOrder::AscendingOrder);
+    ui->regTable->sortByColumn(0, Qt::SortOrder::DescendingOrder);
     ui->regTable->hideColumn(0);
     ui->regTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->regTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -553,7 +561,7 @@ QString WenceslasII::recToHTML(const QSqlRecord& rec)
     return QString("<li>%1 %2 (%3) [%4]</li>").arg(name).arg(surname).arg(stime).arg(id);
 }
 
-void WenceslasII::exportCSV(bool order)
+void WenceslasII::exportCSV(bool order, bool selection)
 {
     qDebug() << "Export CSV";
     
@@ -573,11 +581,28 @@ void WenceslasII::exportCSV(bool order)
     }
     QTextStream stream(&file);
     
-    // Populate the list by records
+    // Populate records by selected or all rows
     QList<QSqlRecord> records;
-    int row;
-    for (row=0; row < evalModel->rowCount(); row++){
-        records.append(evalModel->record(row));
+    if (selection) {
+        // Get selection model and check if there is something selected
+        QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
+        if (!selection_model->hasSelection()) return;
+        
+        // Get the selected row indices
+        QModelIndexList indices = selection_model->selectedRows();
+        
+        // Get all rows to be removed
+        QModelIndex mapped;
+        int i;
+        for (i = 0; i < indices.count(); i++) {
+            mapped = evalSortProxy->mapToSource(indices.at(i));
+            records.append(evalModel->record(mapped.row()));
+        }
+    } else {
+        int row;
+        for (row=0; row < evalModel->rowCount(); row++){
+            records.append(evalModel->record(row));
+        }
     }
     
     // Sort records by order
@@ -610,7 +635,7 @@ void WenceslasII::exportCSV(bool order)
     file.close();
 }
 
-void WenceslasII::exportHTML(bool order)
+void WenceslasII::exportHTML(bool order, bool selection)
 {
     
     qDebug() << "Export HTML";
@@ -633,12 +658,32 @@ void WenceslasII::exportHTML(bool order)
     stream.setCodec("UTF-8");
     // This works in QT6:
     //stream.setEncoding(QStringConverter::Utf8);
-    
-    // Populate the list by records
+
+    // Populate records by selected or all rows
     QList<QSqlRecord> records;
-    int row;
-    for (row=0; row < evalModel->rowCount(); row++){
-        records.append(evalModel->record(row));
+    if (selection) {
+        // Populate records by selected rows
+        
+        // Get selection model and check if there is something selected
+        QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
+        if (!selection_model->hasSelection()) return;
+        
+        // Get the selected row indices
+        QModelIndexList indices = selection_model->selectedRows();
+        
+        // Get all rows to be removed
+        QModelIndex mapped;
+        int i;
+        for (i = 0; i < indices.count(); i++) {
+            mapped = evalSortProxy->mapToSource(indices.at(i));
+            records.append(evalModel->record(mapped.row()));
+        }
+    } else {
+        // Populate records by all rows
+        int row;
+        for (row=0; row < evalModel->rowCount(); row++){
+            records.append(evalModel->record(row));
+        }
     }
     
     // Sort records by order
@@ -930,22 +975,50 @@ void WenceslasII::importFile()
 
 void WenceslasII::actionExportCSV()
 {
-    exportCSV(false);
+    // Export all records in order
+    exportCSV(false, false);
 }
 
 void WenceslasII::actionExportCSV1()
 {
-    exportCSV(true);
+    // Export all records by category
+    exportCSV(true, false);
+}
+
+void WenceslasII::actionExportCSV2()
+{
+    // Export selected records by order
+    exportCSV(false, true);
+}
+
+void WenceslasII::actionExportCSV3()
+{
+    // Export selected records by category
+    exportCSV(true, true);
 }
 
 void WenceslasII::actionExportHTML()
 {
-    exportHTML(false);
+    // Export all records in order
+    exportHTML(false, false);
 }
 
 void WenceslasII::actionExportHTML1()
 {
-    exportHTML(true);
+    // Export all records by category
+    exportHTML(true, false);
+}
+
+void WenceslasII::actionExportHTML2()
+{
+    // Export selected records by order
+    exportHTML(false, true);
+}
+
+void WenceslasII::actionExportHTML3()
+{
+    // Export selected records by category
+    exportHTML(true, true);
 }
 
 void WenceslasII::createRecord()
@@ -1015,6 +1088,9 @@ void WenceslasII::removeRecord()
                                     tr("Opravdu chcete nenávratně smazat %1 vybraných záznamů?").arg(indices.count()),
                                     QMessageBox::Yes|QMessageBox::No, QMessageBox::No);
     if (reply == QMessageBox::Yes) {
+        // Clear current selection
+        ui->regTable->setCurrentIndex(QModelIndex());
+        
         // Get all rows to be removed
         QList<int> rows;
         QModelIndex mapped;
@@ -1032,6 +1108,9 @@ void WenceslasII::removeRecord()
             regModel->removeRow(rows[i]);
             qDebug() << rows[i];
         }
+        
+        // Clear data from forms
+        mapper->revert();
     }
 }
 
@@ -1057,7 +1136,7 @@ void WenceslasII::correctRecord()
 
 void WenceslasII::regOriginalOrder()
 {
-    ui->regTable->sortByColumn(-1, Qt::SortOrder::AscendingOrder);
+    ui->regTable->sortByColumn(0, Qt::SortOrder::DescendingOrder);
 }
 
 void WenceslasII::timeOriginalOrder()
