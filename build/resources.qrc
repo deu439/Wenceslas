@@ -1,6 +1,0 @@
-<!DOCTYPE RCC><RCC version="1.0">
-<qresource>
-    <file alias="male.png">male.png</file>
-    <file alias="female.png">female.png</file>
-</qresource>
-</RCC>
