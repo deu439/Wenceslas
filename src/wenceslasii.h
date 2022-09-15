@@ -31,7 +31,8 @@
 #include "mycategories.h"
 #include "spinboxdelegate.h"
 #include "mysortfilterproxymodel.h"
-#include "evaltablemodel.h"
+//#include "evaltablemodel.h"
+#include "evaltablemodelii.h"
 
 namespace Ui {
     class WenceslasII;
@@ -91,10 +92,10 @@ private:
     void setupEvalTable();
     void timeTableEdit();
     bool eventFilter(QObject *o, QEvent* e);
-    QStringList recToStringList(const QSqlRecord &rec);
-    QString recToHTML(const QSqlRecord& rec);
-    void exportCSV(bool order = false);
-    void exportHTML(bool order = false);
+    QStringList recToStringList(const EvalTableModel::Record &rec);
+    QString recToHTML(const EvalTableModel::Record &rec);
+    void exportCSV(bool order = false, bool selection = false);
+    void exportHTML(bool order = false, bool selection = false);
     QModelIndex findItem(QAbstractTableModel *model, int col, QVariant val);
     
     Ui::WenceslasII *ui;
@@ -126,8 +127,12 @@ private slots:
     void importFile();
     void actionExportCSV();
     void actionExportCSV1();
+    void actionExportCSV2();
+    void actionExportCSV3();
     void actionExportHTML();
     void actionExportHTML1();
+    void actionExportHTML2();
+    void actionExportHTML3();
     
     void createRecord();
     void removeRecord();

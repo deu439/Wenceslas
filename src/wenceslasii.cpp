@@ -38,22 +38,22 @@
 MyCategories cats;
 
 struct {
-    bool operator()(QSqlRecord a, QSqlRecord b) const
+    bool operator()(EvalTableModel::Record a, EvalTableModel::Record b) const
     { 
-        return a.value("time").toInt() < b.value("time").toInt();
+        return a.value(7).toInt() < b.value(7).toInt();
     }
 } ByOrder;
 
 
 struct {
-    bool operator()(QSqlRecord a, QSqlRecord b) const
+    bool operator()(EvalTableModel::Record a, EvalTableModel::Record b) const
     { 
         
         // Find category id and time of a and b
-        int id_a = a.value("category").toInt();
-        int time_a = a.value("time").toInt();
-        int id_b = b.value("category").toInt();
-        int time_b = b.value("time").toInt();
+        int id_a = a.value(6).toInt();
+        int time_a = a.value(7).toInt();
+        int id_b = b.value(6).toInt();
+        int time_b = b.value(7).toInt();
         
         if (id_a < id_b) return true;
         if (id_b < id_a) return false;
@@ -400,8 +400,9 @@ void WenceslasII::setupEvalTable()
     // ====
     // Setup table model
     if (evalModel != NULL) delete evalModel;
-    evalModel = new EvalTableModel(this, cats, db);
-    evalModel->setTable("results");
+    //evalModel = new EvalTableModel(this, cats, db);
+    //evalModel->setTable("results");
+    evalModel = new EvalTableModel(this, cats);
     //evalModel->setHeaderData(0, Qt::Horizontal, tr("ID"));
     //evalModel->setHeaderData(1, Qt::Horizontal, tr("Jméno"));
     //evalModel->setHeaderData(2, Qt::Horizontal, tr("Příjmení"));
@@ -413,12 +414,12 @@ void WenceslasII::setupEvalTable()
     //evalModel->setHeaderData(8, Qt::Horizontal, tr("Pořadí"));
     //evalModel->setHeaderData(9, Qt::Horizontal, tr("Pořadí v kategorii"));
     
-    bool ret = evalModel->select();
-    if (!ret) {
-        QMessageBox::warning(this, tr("Chyba"), tr("Nepodařilo se načíst databázi, "
-        "zřejmně má špatný formát."));
-        return;
-    }
+    //bool ret = evalModel->select();
+    //if (!ret) {
+    //    QMessageBox::warning(this, tr("Chyba"), tr("Nepodařilo se načíst databázi, "
+    //    "zřejmně má špatný formát."));
+    //    return;
+    //}
     
     // ====
     // Create sorting proxy
@@ -510,7 +511,7 @@ bool WenceslasII::eventFilter(QObject* o, QEvent* e)
     return false;
 }
 
-QStringList WenceslasII::recToStringList(const QSqlRecord& rec)
+QStringList WenceslasII::recToStringList(const EvalTableModel::Record &rec)
 // Converts QSqlRecord from "results" table to list of strings
 {
     QStringList list;
@@ -549,14 +550,14 @@ QStringList WenceslasII::recToStringList(const QSqlRecord& rec)
     return list;
 }
 
-QString WenceslasII::recToHTML(const QSqlRecord& rec)
+QString WenceslasII::recToHTML(const EvalTableModel::Record &rec)
 // Converts QSqlRecord from "results" table to a HTML code
 {
-    QString name = rec.value("first_name").toString();
-    QString surname = rec.value("surname").toString();
-    uint time = rec.value("time").toInt();
+    QString name = rec.value(1).toString();
+    QString surname = rec.value(2).toString();
+    uint time = rec.value(7).toInt();
     QString stime = formatTime(time);
-    int id = rec.value("id").toInt();
+    int id = rec.value(0).toInt();
     
     return QString("<li>%1 %2 (%3) [%4]</li>").arg(name).arg(surname).arg(stime).arg(id);
 }
@@ -582,7 +583,8 @@ void WenceslasII::exportCSV(bool order, bool selection)
     QTextStream stream(&file);
     
     // Populate records by selected or all rows
-    QList<QSqlRecord> records;
+    QList<EvalTableModel::Record> records;
+    
     if (selection) {
         // Get selection model and check if there is something selected
         QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
@@ -614,14 +616,14 @@ void WenceslasII::exportCSV(bool order, bool selection)
     
     // First write the header
     int col;
-    QSqlRecord first = records.at(0);
+    EvalTableModel::Record first = records.at(0);
     for (col = 0; col < first.count() - 1; col++){
         stream << first.fieldName(col) << ",";
     }
     stream << first.fieldName(col) << Qt::endl;
     
     // Now write the content
-    QList<QSqlRecord>::const_iterator it;
+    QList<EvalTableModel::Record>::const_iterator it;
     QStringList str;
     for (it = records.constBegin(); it != records.constEnd(); ++it){
         str = recToStringList(*it);
@@ -660,7 +662,7 @@ void WenceslasII::exportHTML(bool order, bool selection)
     //stream.setEncoding(QStringConverter::Utf8);
 
     // Populate records by selected or all rows
-    QList<QSqlRecord> records;
+    QList<EvalTableModel::Record> records;
     if (selection) {
         // Populate records by selected rows
         
@@ -687,13 +689,13 @@ void WenceslasII::exportHTML(bool order, bool selection)
     }
     
     // Sort records by order
-    QList<QSqlRecord>::const_iterator it;
+    QList<EvalTableModel::Record>::const_iterator it;
     
     // Print results per category
     if (order) {
         std::sort(records.begin(), records.end(), ByOrderAndCategory);
         
-        int current_cid = records.constBegin()->value("category").toInt();
+        int current_cid = records.constBegin()->value(6).toInt();
         MyCategory current_cat = cats.byId(current_cid);
         MyCategory tmp;
         
@@ -702,7 +704,7 @@ void WenceslasII::exportHTML(bool order, bool selection)
         stream << "<ol>" << Qt::endl;
         
         for (it = records.constBegin(); it != records.constEnd(); ++it){
-            tmp = cats.byId(it->value("category").toInt());
+            tmp = cats.byId(it->value(6).toInt());
             
             if (current_cat == tmp) {
                 stream << recToHTML(*it) << Qt::endl;
@@ -1301,10 +1303,7 @@ void WenceslasII::evaluate()
     if (!primary.isOpen()) return;
     
     // Clear the results table
-    for(int i = 0; i<evalModel->rowCount(); i++){
-        evalModel->removeRows(i, 1, QModelIndex());
-    }
-    evalModel->select();
+    evalModel->removeRows(0, evalModel->rowCount(), QModelIndex());
     
     // Clear the conflict list
     ui->evalList->clear();
@@ -1344,12 +1343,12 @@ void WenceslasII::evaluate()
     }
     
     // Find complete information for each id =========
-    QList<QSqlRecord> records;
+    QList<EvalTableModel::Record> records;
     bool insert_record;
     MyCategory currentCategory;
     QSet<int>::const_iterator it;
     for(it = ids.constBegin(); it != ids.constEnd(); ++it){
-        QSqlRecord rec = evalModel->record();
+        EvalTableModel::Record rec = evalModel->record();
         insert_record = true;
         
         // Find info about the runner ====
@@ -1399,16 +1398,16 @@ void WenceslasII::evaluate()
         // There is a unique record for the id
         } else {
             query.first();
-            rec.setValue("id", *it);
-            rec.setValue("first_name", query.value(0));
-            rec.setValue("surname", query.value(1));
-            rec.setValue("address", query.value(2));
-            rec.setValue("woman", query.value(3));
-            rec.setValue("age", query.value(4));
+            rec.setValue(0, *it);
+            rec.setValue(1, query.value(0));
+            rec.setValue(2, query.value(1));
+            rec.setValue(3, query.value(2));
+            rec.setValue(4, query.value(3));
+            rec.setValue(5, query.value(4));
             
             // Store the category so that we can use it while evaluating the time
             currentCategory = cats.byAgeWoman(query.value(4).toInt(), query.value(3).toBool());
-            rec.setValue("category", currentCategory.id);
+            rec.setValue(6, currentCategory.id);
         }
         
         // Find the corresponding time ====
@@ -1482,7 +1481,7 @@ void WenceslasII::evaluate()
             if (!ret) qDebug() << "Failed to get first record!";
             // TODO: average the times??
             // Subtract the offset
-            rec.setValue("time", query.value(0).toInt() - currentCategory.offset);
+            rec.setValue(7, query.value(0).toInt() - currentCategory.offset);
         }
         
         // Insert the record into the eval table if all is right
@@ -1494,15 +1493,12 @@ void WenceslasII::evaluate()
     // Assign order in category
     std::sort(records.begin(), records.end(), ByOrderAndCategory);
     
-    QList<QSqlRecord>::iterator it1;
+    QList<EvalTableModel::Record>::iterator it1;
     int cid;
     QMap<int, int> order_category;
     for (it1=records.begin(); it1 != records.end(); ++it1){
         // determine category id
-        //age = it1->value("age").toInt();
-        //woman = it1->value("woman").toBool();
-        //cid = cats.categoryId(age, woman);
-        cid = it1->value("category").toInt();
+        cid = it1->value(6).toInt();
         
         // Increment the corresponding order in set
         if (order_category.contains(cid)) {
@@ -1511,7 +1507,7 @@ void WenceslasII::evaluate()
             order_category.insert(cid, 1);
         }
         
-        it1->setValue("order_category", order_category[cid]);
+        it1->setValue(9, order_category[cid]);
     }
     
     // Assign overall order & insert into evalModel
@@ -1519,12 +1515,12 @@ void WenceslasII::evaluate()
     
     int order = 1;
     for (it1=records.begin(); it1 != records.end(); ++it1){
-        it1->setValue("order", order);
+        it1->setValue(8, order);
+        
         // FIXME: Check error
-        ret = evalModel->insertRecord(-1, *it1);
+        ret = evalModel->insertRecord(evalModel->rowCount(), *it1);
         if (ret == false) {
             qDebug() << "Insert record failed!";
-            qDebug() << evalModel->lastError();
         }
         
         order++;

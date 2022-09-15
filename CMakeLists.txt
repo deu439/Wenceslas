@@ -5,9 +5,10 @@ project(Wenceslas)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # Instruct CMake to run moc automatically when needed.
 set(CMAKE_AUTOMOC ON)
-set (CMAKE_CXX_FLAGS "-Wall")
+set (CMAKE_CXX_FLAGS "-Wall -g")
 
 # Find the QtWidgets library
+find_package(Qt5Core REQUIRED)
 find_package(Qt5Widgets REQUIRED)
 find_package(Qt5Sql REQUIRED)
 
@@ -19,10 +20,9 @@ set(wenceslasii_SRC
   src/mygenderitemdelegate.cpp
   src/mytimeitemdelegate.cpp
   src/spinboxdelegate.cpp
-#  src/filtertableheader.cpp
-#  src/filterlineedit.cpp
   src/mysortfilterproxymodel.cpp
-  src/evaltablemodel.cpp
+  #src/evaltablemodel.cpp
+  src/evaltablemodelii.cpp
   src/noteditabledelegate.cpp
 )
 

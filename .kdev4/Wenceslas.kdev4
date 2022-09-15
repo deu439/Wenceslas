@@ -2,23 +2,12 @@
 BuildItems=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x01\x00\x00\x00\x0b\x00\x00\x00\x00\x01\x00\x00\x00\x12\x00W\x00e\x00n\x00c\x00e\x00s\x00l\x00a\x00s)
 
 [CMake]
-Build Directory Count=2
-Current Build Directory Index-Hostitelský systém=1
-Temporary Build Directory Index=1
+Build Directory Count=1
+Current Build Directory Index-Hostitelský systém=0
 
 [CMake][CMake Build Directory 0]
-Build Directory Path=/home/deu/Google Drive/Projects/Wenceslas/build
+Build Directory Path=/home/deu/Mega/Projects/Wenceslas/build
 Build Type=Debug
-CMake Binary=/usr/bin/cmake
-CMake Executable=/usr/bin/cmake
-Environment Profile=
-Extra Arguments=
-Install Directory=/usr/local
-Runtime=Hostitelský systém
-
-[CMake][CMake Build Directory 1]
-Build Directory Path=/home/deu/Google Drive/Projects/Wenceslas/release
-Build Type=Release
 CMake Binary=/usr/bin/cmake
 CMake Executable=/usr/bin/cmake
 Environment Profile=
@@ -245,16 +234,36 @@ Type=Native Application
 
 [Launch][Launch Configuration 2][Data]
 Arguments=
+Break on Start=false
+Debugger Shell=
 Dependencies=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x00)
 Dependency Action=Nothing
+Display Demangle Names=true
+Display Static Members=false
 EnvironmentGroup=
 Executable=file:///home/deu/Google Drive/Projects/Wenceslas
 External Terminal=konsole --noclose --workdir %workdir -e %exe
+GDB Path=
 Kill Before Executing Again=4194304
+LLDB Arguments=
+LLDB Config Script=
+LLDB Environment=
+LLDB Executable=file:///usr/bin/lldb-server
+LLDB Inherit System Env=true
+LLDB Remote Debugging=false
+LLDB Remote Path=
+LLDB Remote Server=
 Project Target=Wenceslas,wenceslasii
+Remote GDB Config Script=
+Remote GDB Run Script=
+Remote GDB Shell Script=
+Start With=ApplicationOutput
 Use External Terminal=false
 Working Directory=
 isExecutable=false
+
+[Project]
+VersionControlSupport=kdevgit
 
 [SourceFileTemplates]
 LastUsedTemplate=/home/deu/.local/share/kdevfiletemplates/template_descriptions/cpp_basic.desktop
