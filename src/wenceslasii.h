@@ -153,6 +153,9 @@ private slots:
     //void clearTimeFiltersClicked();
     //void clearEvalFiltersClicked();
     void evalCategoryIndexChanged(int index);
+    
+    void regDimensionChanged(const QModelIndex &parent, int first, int last);
+    void timeDimensionChanged(const QModelIndex &parent, int first, int last);
 
 signals:
     //void setRegFilter(int column, const QString &pattern);

@@ -273,6 +273,8 @@ void WenceslasII::setupRegTable()
     regModel->setTable("runners");
     regModel->setEditStrategy(QSqlTableModel::OnFieldChange);
     
+    
+    // Select data from database
     bool ret = regModel->select();
     if (!ret) {
         QMessageBox::warning(this, tr("Chyba"), tr("Nepodařilo se načíst databázi, "
@@ -280,10 +282,20 @@ void WenceslasII::setupRegTable()
         return;
     }
     
+    // FIX: fix bug with loading large databases
+    while (regModel->canFetchMore()){
+        regModel->fetchMore();
+    }
+    
     // ====
     // Create sorting proxy
     regSortProxy = new MySortFilterProxyModel(regModel);
     regSortProxy->setSourceModel(regModel);
+    
+    // Connect signals
+    connect(regSortProxy, &MyTableModel::rowsInserted, this, &WenceslasII::regDimensionChanged);
+    connect(regSortProxy, &MyTableModel::rowsRemoved, this, &WenceslasII::regDimensionChanged);
+    
     //FilterTableHeader *header = new FilterTableHeader(ui->regTable);
     //ui->regTable->setHorizontalHeader(header);
     //header->setVisible(true);
@@ -328,6 +340,9 @@ void WenceslasII::setupRegTable()
             &QItemSelectionModel::currentRowChanged,
             mapper,
             &QDataWidgetMapper::setCurrentModelIndex);
+    
+    // Update the row counter !! regSortProxy hides 'deleted' rows!!
+    ui->reg_count->setText(QString::number(regSortProxy->rowCount()));
 }
 
 void WenceslasII::setupTimeTable()
@@ -359,6 +374,11 @@ void WenceslasII::setupTimeTable()
     // Create sorting proxy
     timeSortProxy = new MySortFilterProxyModel(timeModel);
     timeSortProxy->setSourceModel(timeModel);
+    
+    // Connect signals
+    connect(timeSortProxy, &MyTableModel::rowsInserted, this, &WenceslasII::timeDimensionChanged);
+    connect(timeSortProxy, &MyTableModel::rowsRemoved, this, &WenceslasII::timeDimensionChanged);
+    
     //FilterTableHeader *header = new FilterTableHeader(ui->timeTable);
     //ui->timeTable->setHorizontalHeader(header);
     //header->setVisible(true);
@@ -390,7 +410,9 @@ void WenceslasII::setupTimeTable()
             this, SLOT(editing_finished(QWidget*,QAbstractItemDelegate::EndEditHint)));
     connect(timeDelegate, SIGNAL(closeEditor(QWidget*,QAbstractItemDelegate::EndEditHint)), 
             this, SLOT(editing_finished(QWidget*,QAbstractItemDelegate::EndEditHint)));
-    
+
+    // Update the row counter !! timeSortProxy hides 'deleted' rows!!
+    ui->time_count->setText(QString::number(timeSortProxy->rowCount()));
 }
 
 void WenceslasII::setupEvalTable()
@@ -484,10 +506,6 @@ void WenceslasII::timeTableEdit()
             }
         }
     }
-    
-    // Needed to render the header correctly
-    //FilterTableHeader *header = (FilterTableHeader *)ui->timeTable->horizontalHeader();
-    //header->adjustPositions();
 }
 
 bool WenceslasII::eventFilter(QObject* o, QEvent* e)
@@ -593,7 +611,6 @@ void WenceslasII::exportCSV(bool order, bool selection)
         // Get the selected row indices
         QModelIndexList indices = selection_model->selectedRows();
         
-        // Get all rows to be removed
         QModelIndex mapped;
         int i;
         for (i = 0; i < indices.count(); i++) {
@@ -1601,6 +1618,19 @@ void WenceslasII::evalCategoryIndexChanged(int index)
         evalSortProxy->addFilter(6, data);
     }
 }
+
+void WenceslasII::regDimensionChanged(const QModelIndex& parent, int first, int last)
+{
+    // Update the row counter !! regSortProxy hides 'deleted' rows!!
+    ui->reg_count->setText(QString::number(regSortProxy->rowCount()));
+}
+
+void WenceslasII::timeDimensionChanged(const QModelIndex& parent, int first, int last)
+{
+    // Update the row counter !! timeSortProxy hides 'deleted' rows!!
+    ui->time_count->setText(QString::number(timeSortProxy->rowCount()));
+}
+
 
 //void WenceslasII::clearRegFiltersClicked()
 //{
