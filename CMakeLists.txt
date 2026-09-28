@@ -11,6 +11,7 @@ set (CMAKE_CXX_FLAGS "-Wall -g")
 find_package(Qt5Core REQUIRED)
 find_package(Qt5Widgets REQUIRED)
 find_package(Qt5Sql REQUIRED)
+find_package(Qt5Network REQUIRED)
 
 set(wenceslasii_SRC
   src/main_wenceslasii.cpp
@@ -24,6 +25,8 @@ set(wenceslasii_SRC
   #src/evaltablemodel.cpp
   src/evaltablemodelii.cpp
   src/noteditabledelegate.cpp
+  src/resultsupload.cpp
+  src/uploadresultsdialog.cpp
 )
 
 # Create code from a list of Qt designer ui files.
@@ -35,7 +38,7 @@ qt5_wrap_ui(wenceslasii_SRC src/wenceslasii.ui)
 add_executable(wenceslasii ${wenceslasii_SRC})
 
 # Use the Widgets module from Qt 5.
-target_link_libraries(wenceslasii Qt5::Widgets Qt5::Sql)
+target_link_libraries(wenceslasii Qt5::Widgets Qt5::Sql Qt5::Network)
 
 # Install the executable
 install(TARGETS wenceslasii DESTINATION bin)

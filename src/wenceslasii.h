@@ -121,6 +121,9 @@ private:
     EvalTableModel *evalModel = NULL;
     MySortFilterProxyModel *evalSortProxy;
     
+    // Upload-to-website action (created in ctor, lives in menuResults)
+    QAction *uploadAction = NULL;
+    
 private slots:
     void openFile();
     void newFile();
@@ -153,6 +156,7 @@ private slots:
     //void clearTimeFiltersClicked();
     //void clearEvalFiltersClicked();
     void evalCategoryIndexChanged(int index);
+    void uploadResults();
     
     void regDimensionChanged(const QModelIndex &parent, int first, int last);
     void timeDimensionChanged(const QModelIndex &parent, int first, int last);

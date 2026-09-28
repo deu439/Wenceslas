@@ -20,6 +20,8 @@
 #include "mytimeitemdelegate.h"
 #include "filtertableheader.h"
 #include "noteditabledelegate.h"
+#include "uploadresultsdialog.h"
+#include "resultsupload.h"
 
 #include <QDebug>
 #include <math.h>
@@ -91,6 +93,13 @@ WenceslasII::WenceslasII(QWidget* parent) :
     connect(ui->actionExportHTML1, &QAction::triggered, this, &WenceslasII::actionExportHTML1);
     connect(ui->actionExportHTML2, &QAction::triggered, this, &WenceslasII::actionExportHTML2);
     connect(ui->actionExportHTML3, &QAction::triggered, this, &WenceslasII::actionExportHTML3);
+    
+    // Upload evaluation results to the website (beh.farnostsj.cz)
+    uploadAction = new QAction(tr("Odeslat výsledky na web…"), this);
+    uploadAction->setEnabled(false);
+    ui->menuResults->addSeparator();
+    ui->menuResults->addAction(uploadAction);
+    connect(uploadAction, &QAction::triggered, this, &WenceslasII::uploadResults);
     
     // Setup buttons
     connect(ui->create, &QPushButton::clicked, this, &WenceslasII::createRecord);
@@ -260,6 +269,7 @@ void WenceslasII::enableButtons()
     ui->actionExportHTML1->setEnabled(true);
     ui->actionExportHTML2->setEnabled(true);
     ui->actionExportHTML3->setEnabled(true);
+    if (uploadAction) uploadAction->setEnabled(true);
 }
 
 void WenceslasII::setupRegTable()
@@ -1038,6 +1048,41 @@ void WenceslasII::actionExportHTML3()
 {
     // Export selected records by category
     exportHTML(true, true);
+}
+
+void WenceslasII::uploadResults()
+{
+    if (evalModel == NULL || evalModel->rowCount() == 0) {
+        QMessageBox::warning(this, tr("Žádná data"),
+            tr("Vyhodnocení je prázdné — nejprve spusťte vyhodnocení všech závodníků."));
+        return;
+    }
+    
+    QList<EvalTableModel::Record> records;
+    int row;
+    for (row = 0; row < evalModel->rowCount(); row++) {
+        records.append(evalModel->record(row));
+    }
+    std::sort(records.begin(), records.end(), ByOrder);
+    
+    int missing = 0;
+    QList<ResultsUpload::Row> rows;
+    rows.reserve(records.size());
+    for (const EvalTableModel::Record &rec : records) {
+        const MyCategory category = cats.byId(rec.value(6).toInt());
+        if (category.toString().isEmpty() || category.toString() == QStringLiteral("None")) {
+            missing++;
+        }
+        rows.append({
+            rec.value(0).toInt(),
+            rec.value(1).toString() + QLatin1Char(' ') + rec.value(2).toString(),
+            rec.value(7).toUInt(),
+            category.toString(),
+        });
+    }
+    
+    UploadResultsDialog dlg(ResultsUpload::buildCsv(rows), rows.size(), missing, this);
+    dlg.exec();
 }
 
 void WenceslasII::createRecord()
