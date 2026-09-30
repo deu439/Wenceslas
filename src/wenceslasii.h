@@ -138,6 +138,8 @@ private:
     EvalTableModel *evalModel = NULL;
     MySortFilterProxyModel *evalSortProxy;
     
+    // Upload-to-website action (created in ctor, lives in menuResults)
+    QAction *uploadAction = NULL;
     // Automatic evaluation
     QTimer evalTimer;
     QTime evalTime;             // Time of the last evaluation, null if not evaluated yet
@@ -185,6 +187,7 @@ private slots:
     //void clearTimeFiltersClicked();
     //void clearEvalFiltersClicked();
     void evalCategoryIndexChanged(int index);
+    void uploadResults();
     void genderToggled(bool checked);
     
     void regDimensionChanged(const QModelIndex &parent, int first, int last);
