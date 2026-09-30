@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file>icons/female.png</file>
+        <file>icons/male.png</file>
+        <file>OpenData_-_seznam_jmen_k_2026-06-30.csv</file>
+    </qresource>
+</RCC>

@@ -18,7 +18,7 @@
 #include <QPainter>
 
 MyGenderItemDelegate::MyGenderItemDelegate(QObject *parent)
-: QStyledItemDelegate(parent), woman(QPixmap("female.png")), man(QPixmap("male.png"))
+: QStyledItemDelegate(parent), woman(QPixmap(":/icons/female.png")), man(QPixmap(":/icons/male.png"))
 {
 }
 

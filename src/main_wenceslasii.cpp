@@ -1,7 +1,7 @@
-#include "wenceslasii.h"
 #include <QApplication>
 #include <QMetaType>
 
+#include "wenceslasii.h"
 #include "mycategories.h"
 
 int main(int argc, char *argv[])

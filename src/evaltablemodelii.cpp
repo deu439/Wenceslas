@@ -75,9 +75,9 @@ QVariant EvalTableModel::data(const QModelIndex& index, int role) const
     // Decoration role
      } else if (role == Qt::DecorationRole && col == 4) {
          if (modelData[row].value(4).toBool())
-             item = QPixmap("female.png");
+             item = QPixmap(":/icons/female.png");
          else
-             item = QPixmap("male.png");
+             item = QPixmap(":/icons/male.png");
 
     // Invalid
     } else {
@@ -167,6 +167,14 @@ bool EvalTableModel::insertRecord(int row, const Record &rec)
     endInsertRows();
     
     return true;
+}
+
+void EvalTableModel::setRecords(const QList<Record> &records)
+// Replace all the records at once
+{
+    beginResetModel();
+    modelData = records;
+    endResetModel();
 }
 
 
