@@ -82,6 +82,7 @@ public:
     Record record();
     Record record(int row);
     bool insertRecord(int row, const Record &rec);
+    void setRecords(const QList<Record> &records);
     //Qt::ItemFlags flags(const QModelIndex & /*index*/) const override;
     
     MyCategories cats;

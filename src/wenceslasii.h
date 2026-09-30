@@ -20,9 +20,11 @@
 #include <QMainWindow>
 #include <QSettings>
 #include <QMap>
+#include <QHash>
 #include <QDataWidgetMapper>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QTime>
 #include <QSqlRelationalTableModel>
 #include <QSortFilterProxyModel>
 #include <QListWidgetItem>
@@ -33,6 +35,8 @@
 #include "mysortfilterproxymodel.h"
 //#include "evaltablemodel.h"
 #include "evaltablemodelii.h"
+#include "printingwindow.h"
+#include "joinproxymodel.h"
 
 namespace Ui {
     class WenceslasII;
@@ -86,6 +90,8 @@ public:
     
 private:
     bool loadSettings();
+    void loadNames();
+    bool checkRecord(int key);
     void enableButtons();
     void setupRegTable();
     void setupTimeTable();
@@ -94,9 +100,14 @@ private:
     bool eventFilter(QObject *o, QEvent* e);
     QStringList recToStringList(const EvalTableModel::Record &rec);
     QString recToHTML(const EvalTableModel::Record &rec);
+    void extractRecs(QList<EvalTableModel::Record> &list, bool order = false, bool selection = false);
     void exportCSV(bool order = false, bool selection = false);
     void exportHTML(bool order = false, bool selection = false);
+    void print(bool order = false, bool selection = false);
     QModelIndex findItem(QAbstractTableModel *model, int col, QVariant val);
+    bool createTimerTable();
+    void saveStartTime();
+    void updateEvalIndicators();
     
     Ui::WenceslasII *ui;
     
@@ -110,9 +121,15 @@ private:
     MySortFilterProxyModel *regSortProxy = NULL;
     QDataWidgetMapper *mapper = NULL;
     
+    // Gender of first names (upper case) as bit flags, see NameMan, NameWoman
+    enum NameGender { NameMan = 1, NameWoman = 2, NameNeutral = 4 };
+    QHash<QString, int> nameGenders;
+    
     // Time table
     QSqlTableModel *timeModel = NULL;
-    MySortFilterProxyModel *timeSortProxy = NULL;
+    JoinProxyModel *joinTimeEvalProxy = nullptr;
+    //MySortFilterProxyModel *timeSortProxy = NULL;
+    QSortFilterProxyModel *timeSortProxy = nullptr;
     QTimer timer;
     QElapsedTimer elapsed_timer;
     uint last_ms = 0;
@@ -120,6 +137,15 @@ private:
     // Eval table
     EvalTableModel *evalModel = NULL;
     MySortFilterProxyModel *evalSortProxy;
+    
+    // Automatic evaluation
+    QTimer evalTimer;
+    QTime evalTime;             // Time of the last evaluation, null if not evaluated yet
+    bool evalFailed = false;    // Last evaluation was not completed due to database errors
+    bool evalOutdated = true;   // Data changed since the last evaluation
+    
+    // Printing dialog
+    PrintingWindow *printPreview = nullptr;
     
 private slots:
     void openFile();
@@ -133,8 +159,11 @@ private slots:
     void actionExportHTML1();
     void actionExportHTML2();
     void actionExportHTML3();
+    void actionPrint();
+    void actionPrintSelection();
     
     void createRecord();
+    void clearRecord();
     void removeRecord();
     void correctRecord();
     void regOriginalOrder();
@@ -142,17 +171,21 @@ private slots:
     void evalOriginalOrder();
     void startTimer();
     void clearTimer();
+    void restoreTimer();
     void updateClock();
     void recordTime();
     void removeTime();
     void editing_finished(QWidget *editor, QAbstractItemDelegate::EndEditHint hint);
     void evaluate();
+    void autoEvalToggled(bool checked);
+    void markEvalOutdated();
     void tabChanged(int index);
     void conflictActivated(QListWidgetItem *item);
     //void clearRegFiltersClicked();
     //void clearTimeFiltersClicked();
     //void clearEvalFiltersClicked();
     void evalCategoryIndexChanged(int index);
+    void genderToggled(bool checked);
     
     void regDimensionChanged(const QModelIndex &parent, int first, int last);
     void timeDimensionChanged(const QModelIndex &parent, int first, int last);

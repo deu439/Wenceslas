@@ -81,9 +81,9 @@ QVariant MyTableModel::data(const QModelIndex& index, int role) const
     // Decoration role
      } else if (role == Qt::DecorationRole && col == 5) {
          if (QSqlTableModel::data(index, Qt::DisplayRole).toBool())
-             item = QPixmap("female.png");
+             item = QPixmap(":/icons/female.png");
          else
-             item = QPixmap("male.png");
+             item = QPixmap(":/icons/male.png");
 
     // Default
     } else {

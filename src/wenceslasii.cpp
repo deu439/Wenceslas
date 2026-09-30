@@ -22,6 +22,7 @@
 #include "noteditabledelegate.h"
 
 #include <QDebug>
+#include <QStringBuilder>
 #include <math.h>
 #include <algorithm>
 #include <QFileDialog>
@@ -33,6 +34,8 @@
 #include <QListWidgetItem>
 #include <QMap>
 #include <QComboBox>
+#include <QDateTime>
+#include <QItemDelegate>
 
 // Global variable keeping all the categories
 MyCategories cats;
@@ -72,6 +75,23 @@ struct {
 } descInt;
 
 
+// Mapper delegate that does not consume the Esc key, so it can reach the clear button shortcut
+class NoEscapeDelegate : public QItemDelegate
+{
+public:
+    using QItemDelegate::QItemDelegate;
+
+protected:
+    bool eventFilter(QObject *o, QEvent *e) override
+    {
+        if (e->type() == QEvent::ShortcutOverride || e->type() == QEvent::KeyPress) {
+            if (static_cast<QKeyEvent *>(e)->key() == Qt::Key_Escape) return false;
+        }
+        return QItemDelegate::eventFilter(o, e);
+    }
+};
+
+
 WenceslasII::WenceslasII(QWidget* parent) :
     QMainWindow(parent),
     ui(new Ui::WenceslasII),
@@ -91,28 +111,40 @@ WenceslasII::WenceslasII(QWidget* parent) :
     connect(ui->actionExportHTML1, &QAction::triggered, this, &WenceslasII::actionExportHTML1);
     connect(ui->actionExportHTML2, &QAction::triggered, this, &WenceslasII::actionExportHTML2);
     connect(ui->actionExportHTML3, &QAction::triggered, this, &WenceslasII::actionExportHTML3);
+    connect(ui->actionPrint, &QAction::triggered, this, &WenceslasII::actionPrint);
+    connect(ui->actionPrintSelection, &QAction::triggered, this, &WenceslasII::actionPrintSelection);
     
     // Setup buttons
     connect(ui->create, &QPushButton::clicked, this, &WenceslasII::createRecord);
+    connect(ui->clear, &QPushButton::clicked, this, &WenceslasII::clearRecord);
     connect(ui->remove, &QPushButton::clicked, this, &WenceslasII::removeRecord);
     connect(ui->correct, &QPushButton::clicked, this, &WenceslasII::correctRecord);
     connect(ui->start_timer, &QPushButton::clicked, this, &WenceslasII::startTimer);
     connect(ui->clear_timer, &QPushButton::clicked, this, &WenceslasII::clearTimer);
+    connect(ui->restore_timer, &QPushButton::clicked, this, &WenceslasII::restoreTimer);
     connect(ui->record_time, &QPushButton::clicked, this, &WenceslasII::recordTime);
     connect(ui->remove_time, &QPushButton::clicked, this, &WenceslasII::removeTime);
     connect(ui->reg_original_order, &QPushButton::clicked, this, &WenceslasII::regOriginalOrder);
     connect(ui->eval, &QPushButton::clicked, this, &WenceslasII::evaluate);
     connect(ui->tabWidget, &QTabWidget::currentChanged, this, &WenceslasII::tabChanged);
+    tabChanged(ui->tabWidget->currentIndex()); // The initial tab emits no currentChanged
     //connect(ui->reg_clear_filters, &QPushButton::clicked, this, &WenceslasII::clearRegFilters);
     connect(ui->time_original_order, &QPushButton::clicked, this, &WenceslasII::timeOriginalOrder);
     //connect(ui->time_clear_filters, &QPushButton::clicked, this, &WenceslasII::clearTimeFilters);
     connect(ui->eval_original_order, &QPushButton::clicked, this, &WenceslasII::evalOriginalOrder);
     //connect(ui->eval_clear_filters, &QPushButton::clicked, this, &WenceslasII::clearEvalFilters);
+    connect(ui->gender, QOverload<bool>::of(&QPushButton::toggled), this, &WenceslasII::genderToggled);
     
     // Setup signals
     connect(&timer, &QTimer::timeout, this, &WenceslasII::updateClock);
     
+    // Setup automatic evaluation
+    evalTimer.setInterval(5000);
+    connect(&evalTimer, &QTimer::timeout, this, &WenceslasII::evaluate);
+    connect(ui->auto_eval, &QPushButton::toggled, this, &WenceslasII::autoEvalToggled);
+    
     loadSettings();
+    loadNames();
     
     // Sort the categories first
     std::sort(cats.begin(), cats.end());
@@ -127,11 +159,15 @@ WenceslasII::WenceslasII(QWidget* parent) :
     }
     connect(ui->evalCategoryCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &WenceslasII::evalCategoryIndexChanged);
     
+    // EvalTable requires no SQL database - it is fully in memory
+    setupEvalTable();
+    
 }
 
 WenceslasII::~WenceslasII()
 {
     delete ui;
+    delete printPreview;
 }
 
 uint WenceslasII::parseTime(const QString& str, bool *ok)
@@ -233,15 +269,101 @@ bool WenceslasII::loadSettings()
     return true;
 }
 
+void WenceslasII::loadNames()
+{
+    QFile file(":/OpenData_-_seznam_jmen_k_2026-06-30.csv");
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "Unable to open the list of names!";
+        return;
+    }
+    
+    QTextStream stream(&file);
+    stream.setCodec("UTF-8");
+    stream.readLine(); // Skip header
+    
+    // A name may be listed several times with different genders
+    while (!stream.atEnd()) {
+        QStringList cols = stream.readLine().trimmed().split(',');
+        if (cols.size() != 2) continue;
+        
+        int flag;
+        if (cols[0] == "MUZ") flag = NameMan;
+        else if (cols[0] == "ZENA") flag = NameWoman;
+        else flag = NameNeutral;
+        
+        nameGenders[cols[1].toUpper()] |= flag;
+    }
+    qDebug() << "Loaded" << nameGenders.size() << "first names";
+}
+
+static bool askSaveAnyway(QWidget *parent, const QString &title, const QString &text)
+// Ask whether to save a record despite a warning. Returns true if the user wants to save it.
+{
+    QMessageBox box(QMessageBox::Question, title, text, QMessageBox::NoButton, parent);
+    QPushButton *save = box.addButton(QObject::tr("Přesto uložit"), QMessageBox::AcceptRole);
+    QPushButton *change = box.addButton(QObject::tr("Změnit"), QMessageBox::RejectRole);
+    box.setDefaultButton(change);
+    box.exec();
+    return box.clickedButton() == save;
+}
+
+bool WenceslasII::checkRecord(int key)
+// Check the data in the registration forms. Returns false if the user wants to change them.
+// key is the key of the record being corrected, or -1 for a new record.
+{
+    // Check whether the ID is already used by another record
+    QSqlQuery query(QSqlDatabase::database("primary"));
+    query.prepare("SELECT COUNT(*) FROM runners WHERE id = ? AND key != ?");
+    query.addBindValue(ui->id->value());
+    query.addBindValue(key);
+    if (!query.exec() || !query.next()) {
+        qDebug() << "Unable to check the ID!";
+        qDebug() << query.lastError();
+    } else if (query.value(0).toInt() > 0) {
+        if (!askSaveAnyway(this, tr("Duplicitní ID"),
+                           tr("ID %1 již v databázi existuje.").arg(ui->id->value()))) {
+            ui->id->setFocus();
+            ui->id->selectAll();
+            return false;
+        }
+    }
+    
+    // Check the gender against the list of names, try the first of multiple names if not found
+    QString name = ui->name->text().trimmed().toUpper();
+    int gender = nameGenders.value(name, 0);
+    if (gender == 0) {
+        gender = nameGenders.value(name.section(' ', 0, 0), 0);
+    }
+    
+    bool woman = ui->gender->isChecked();
+    QString text;
+    if (woman && gender == NameMan) {
+        text = tr("Jméno %1 je mužské, ale je zvoleno pohlaví žena.");
+    } else if (!woman && gender == NameWoman) {
+        text = tr("Jméno %1 je ženské, ale je zvoleno pohlaví muž.");
+    }
+    if (!text.isEmpty()) {
+        if (!askSaveAnyway(this, tr("Nesoulad pohlaví"), text.arg(ui->name->text().trimmed()))) {
+            ui->gender->setFocus();
+            return false;
+        }
+    }
+    
+    return true;
+}
+
 void WenceslasII::enableButtons()
 {
     // Registration tab
     ui->create->setEnabled(true);
+    ui->clear->setEnabled(true);
     ui->correct->setEnabled(true);
     ui->remove->setEnabled(true);
     ui->reg_original_order->setEnabled(true);
     
     // Time tab
+    ui->auto_eval->setEnabled(true);
+    ui->restore_timer->setEnabled(true);
     ui->record_time->setEnabled(true);
     ui->remove_time->setEnabled(true);
     ui->time_original_order->setEnabled(true);
@@ -287,6 +409,13 @@ void WenceslasII::setupRegTable()
         regModel->fetchMore();
     }
     
+    // Any change of the runners makes the evaluation outdated
+    connect(regModel, &QAbstractItemModel::dataChanged, this, &WenceslasII::markEvalOutdated);
+    connect(regModel, &QAbstractItemModel::rowsInserted, this, &WenceslasII::markEvalOutdated);
+    connect(regModel, &QAbstractItemModel::rowsRemoved, this, &WenceslasII::markEvalOutdated);
+    connect(regModel, &QAbstractItemModel::modelReset, this, &WenceslasII::markEvalOutdated);
+    markEvalOutdated();
+    
     // ====
     // Create sorting proxy
     regSortProxy = new MySortFilterProxyModel(regModel);
@@ -310,7 +439,7 @@ void WenceslasII::setupRegTable()
     // Setup table view
     ui->regTable->setModel(regSortProxy);
     ui->regTable->setSortingEnabled(true);
-    ui->regTable->sortByColumn(0, Qt::SortOrder::DescendingOrder);
+    ui->regTable->sortByColumn(0, Qt::SortOrder::AscendingOrder);
     ui->regTable->hideColumn(0);
     ui->regTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->regTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -328,13 +457,14 @@ void WenceslasII::setupRegTable()
     // Connect forms to the model
     mapper = new QDataWidgetMapper(regModel);
     mapper->setSubmitPolicy(QDataWidgetMapper::ManualSubmit);
+    mapper->setItemDelegate(new NoEscapeDelegate(mapper));
     mapper->setModel(regSortProxy);
     mapper->addMapping(ui->name, 2);
     mapper->addMapping(ui->surname, 3);
     mapper->addMapping(ui->address, 4);
     mapper->addMapping(ui->id, 1);
     mapper->addMapping(ui->age, 6);
-    mapper->addMapping(ui->woman, 5);
+    mapper->addMapping(ui->gender, 5, "checked");
     
     connect(ui->regTable->selectionModel(),
             &QItemSelectionModel::currentRowChanged,
@@ -354,7 +484,6 @@ void WenceslasII::setupTimeTable()
     if (timeModel != NULL) delete timeModel;
     timeModel = new QSqlTableModel(this, db);
     timeModel->setTable("times");
-    //timeModel->setRelation(1, QSqlRelation("runners", "id", "id, first_name, surname"));
     bool ret = timeModel->select();
     if (!ret) {
         QMessageBox::warning(this, tr("Chyba"), tr("Nepodařilo se načíst databázi, "
@@ -367,13 +496,29 @@ void WenceslasII::setupTimeTable()
         timeModel->fetchMore();
     }
     timeModel->setHeaderData(1, Qt::Horizontal, "ID");
+    
+    // Any change of the times makes the evaluation outdated
+    connect(timeModel, &QAbstractItemModel::dataChanged, this, &WenceslasII::markEvalOutdated);
+    connect(timeModel, &QAbstractItemModel::rowsInserted, this, &WenceslasII::markEvalOutdated);
+    connect(timeModel, &QAbstractItemModel::rowsRemoved, this, &WenceslasII::markEvalOutdated);
+    connect(timeModel, &QAbstractItemModel::modelReset, this, &WenceslasII::markEvalOutdated);
+    markEvalOutdated();
     timeModel->setHeaderData(2, Qt::Horizontal, "Čas");
     timeModel->setHeaderData(3, Qt::Horizontal, "Operátor");
     
+    joinTimeEvalProxy = new JoinProxyModel(timeModel);
+    joinTimeEvalProxy->setPrimaryModel(timeModel, 1);
+    joinTimeEvalProxy->setSecondaryModel(evalModel, 0);
+    
     // ====
     // Create sorting proxy
-    timeSortProxy = new MySortFilterProxyModel(timeModel);
-    timeSortProxy->setSourceModel(timeModel);
+    //timeSortProxy = new MySortFilterProxyModel(timeModel);
+    //timeSortProxy->setSourceModel(timeModel);
+    timeSortProxy = new MySortFilterProxyModel(joinTimeEvalProxy);
+    timeSortProxy->setSourceModel(joinTimeEvalProxy);
+    //timeSortProxy->addFilter(3, op_name); // FIXME
+    timeSortProxy->setFilterFixedString(op_name);
+    timeSortProxy->setFilterKeyColumn(3);
     
     // Connect signals
     connect(timeSortProxy, &MyTableModel::rowsInserted, this, &WenceslasII::timeDimensionChanged);
@@ -404,12 +549,13 @@ void WenceslasII::setupTimeTable()
     ui->timeTable->setColumnWidth(1, 40);
     ui->timeTable->setColumnWidth(2, 80);
     ui->timeTable->setColumnWidth(3, 80);
-    ui->timeTable->verticalHeader()->setVisible(true);
+    ui->timeTable->verticalHeader()->setVisible(false);
     
     connect(idDelegate, SIGNAL(closeEditor(QWidget*,QAbstractItemDelegate::EndEditHint)), 
             this, SLOT(editing_finished(QWidget*,QAbstractItemDelegate::EndEditHint)));
     connect(timeDelegate, SIGNAL(closeEditor(QWidget*,QAbstractItemDelegate::EndEditHint)), 
             this, SLOT(editing_finished(QWidget*,QAbstractItemDelegate::EndEditHint)));
+    
 
     // Update the row counter !! timeSortProxy hides 'deleted' rows!!
     ui->time_count->setText(QString::number(timeSortProxy->rowCount()));
@@ -417,52 +563,20 @@ void WenceslasII::setupTimeTable()
 
 void WenceslasII::setupEvalTable()
 {
-    QSqlDatabase db = QSqlDatabase::database("primary");
-    
     // ====
     // Setup table model
     if (evalModel != NULL) delete evalModel;
-    //evalModel = new EvalTableModel(this, cats, db);
-    //evalModel->setTable("results");
     evalModel = new EvalTableModel(this, cats);
-    //evalModel->setHeaderData(0, Qt::Horizontal, tr("ID"));
-    //evalModel->setHeaderData(1, Qt::Horizontal, tr("Jméno"));
-    //evalModel->setHeaderData(2, Qt::Horizontal, tr("Příjmení"));
-    //evalModel->setHeaderData(3, Qt::Horizontal, tr("Adresa"));
-    //evalModel->setHeaderData(4, Qt::Horizontal, tr("Pohlaví"));
-    //evalModel->setHeaderData(5, Qt::Horizontal, tr("Věk"));
-    //evalModel->setHeaderData(6, Qt::Horizontal, tr("Kategorie"));
-    //evalModel->setHeaderData(7, Qt::Horizontal, tr("Čas"));
-    //evalModel->setHeaderData(8, Qt::Horizontal, tr("Pořadí"));
-    //evalModel->setHeaderData(9, Qt::Horizontal, tr("Pořadí v kategorii"));
-    
-    //bool ret = evalModel->select();
-    //if (!ret) {
-    //    QMessageBox::warning(this, tr("Chyba"), tr("Nepodařilo se načíst databázi, "
-    //    "zřejmně má špatný formát."));
-    //    return;
-    //}
-    
     // ====
     // Create sorting proxy
     evalSortProxy = new MySortFilterProxyModel(this);
     evalSortProxy->setSourceModel(evalModel);
-    //FilterTableHeader *header = new FilterTableHeader(ui->evalTable);
-    //ui->evalTable->setHorizontalHeader(header);
-    //header->setVisible(true);
-    //header->generateFilters(10, 0);
-    
-    // Connect filter change signal to the proxy
-    //connect(header, &FilterTableHeader::filterChanged, evalSortProxy, &MySortFilterProxyModel::filterChanged);
-    //connect(this, &WenceslasII::setEvalFilter, header, &FilterTableHeader::setFilter);
-    //connect(this, &WenceslasII::clearEvalFilters, header, &FilterTableHeader::clearFilters);
     
     // ====
     // Setup table view
     ui->evalTable->setModel(evalSortProxy);
     ui->evalTable->setSortingEnabled(true);
     ui->evalTable->sortByColumn(-1, Qt::SortOrder::AscendingOrder);
-    //ui->evalTable->setItemDelegateForColumn(4, new MyGenderItemDelegate);
     MyTimeItemDelegate *timeDelegate = new MyTimeItemDelegate(evalModel);
     ui->evalTable->setItemDelegateForColumn(7, timeDelegate);
     ui->evalTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -479,7 +593,6 @@ void WenceslasII::setupEvalTable()
     ui->evalTable->setColumnWidth(8, 40);
     
     // ====
-    // Setup eval list
     connect(ui->evalList, &QListWidget::itemDoubleClicked, this, &WenceslasII::conflictActivated);
 }
 
@@ -495,8 +608,8 @@ void WenceslasII::timeTableEdit()
         QModelIndex index, mapped;
         for(int row = timeModel->rowCount() - 1; row >= 0; row--){
             index = timeModel->index(row, 1);
-            mapped = timeSortProxy->mapFromSource(index);
-            qDebug() << index.data();
+            mapped = timeSortProxy->mapFromSource(joinTimeEvalProxy->mapFromSource(index));
+            qDebug() << "Mapped index:" << index.data();
             
             if (index.data().isNull()){
                 ui->timeTable->setFocus();
@@ -580,6 +693,37 @@ QString WenceslasII::recToHTML(const EvalTableModel::Record &rec)
     return QString("<li>%1 %2 (%3) [%4]</li>").arg(name).arg(surname).arg(stime).arg(id);
 }
 
+void WenceslasII::extractRecs(QList<EvalTableModel::Record> &list, bool order, bool selection)
+{
+    if (selection) {
+        // Get selection model and check if there is something selected
+        QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
+        if (!selection_model->hasSelection()) return;
+        
+        // Get the selected row indices
+        QModelIndexList indices = selection_model->selectedRows();
+        
+        QModelIndex mapped;
+        int i;
+        for (i = 0; i < indices.count(); i++) {
+            mapped = evalSortProxy->mapToSource(indices.at(i));
+            list.append(evalModel->record(mapped.row()));
+        }
+    } else {
+        int row;
+        for (row=0; row < evalModel->rowCount(); row++){
+            list.append(evalModel->record(row));
+        }
+    }
+    
+    // Sort records by order
+    if (order) {
+        std::sort(list.begin(), list.end(), ByOrderAndCategory);
+    } else {
+        std::sort(list.begin(), list.end(), ByOrder);
+    }
+}
+
 void WenceslasII::exportCSV(bool order, bool selection)
 {
     qDebug() << "Export CSV";
@@ -602,34 +746,7 @@ void WenceslasII::exportCSV(bool order, bool selection)
     
     // Populate records by selected or all rows
     QList<EvalTableModel::Record> records;
-    
-    if (selection) {
-        // Get selection model and check if there is something selected
-        QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
-        if (!selection_model->hasSelection()) return;
-        
-        // Get the selected row indices
-        QModelIndexList indices = selection_model->selectedRows();
-        
-        QModelIndex mapped;
-        int i;
-        for (i = 0; i < indices.count(); i++) {
-            mapped = evalSortProxy->mapToSource(indices.at(i));
-            records.append(evalModel->record(mapped.row()));
-        }
-    } else {
-        int row;
-        for (row=0; row < evalModel->rowCount(); row++){
-            records.append(evalModel->record(row));
-        }
-    }
-    
-    // Sort records by order
-    if (order) {
-        std::sort(records.begin(), records.end(), ByOrderAndCategory);
-    } else {
-        std::sort(records.begin(), records.end(), ByOrder);
-    }
+    extractRecs(records, order, selection);
     
     // First write the header
     int col;
@@ -680,38 +797,11 @@ void WenceslasII::exportHTML(bool order, bool selection)
 
     // Populate records by selected or all rows
     QList<EvalTableModel::Record> records;
-    if (selection) {
-        // Populate records by selected rows
-        
-        // Get selection model and check if there is something selected
-        QItemSelectionModel *selection_model = ui->evalTable->selectionModel();
-        if (!selection_model->hasSelection()) return;
-        
-        // Get the selected row indices
-        QModelIndexList indices = selection_model->selectedRows();
-        
-        // Get all rows to be removed
-        QModelIndex mapped;
-        int i;
-        for (i = 0; i < indices.count(); i++) {
-            mapped = evalSortProxy->mapToSource(indices.at(i));
-            records.append(evalModel->record(mapped.row()));
-        }
-    } else {
-        // Populate records by all rows
-        int row;
-        for (row=0; row < evalModel->rowCount(); row++){
-            records.append(evalModel->record(row));
-        }
-    }
-    
-    // Sort records by order
-    QList<EvalTableModel::Record>::const_iterator it;
+    extractRecs(records, order, selection);
     
     // Print results per category
+    QList<EvalTableModel::Record>::const_iterator it;
     if (order) {
-        std::sort(records.begin(), records.end(), ByOrderAndCategory);
-        
         int current_cid = records.constBegin()->value(6).toInt();
         MyCategory current_cat = cats.byId(current_cid);
         MyCategory tmp;
@@ -737,8 +827,6 @@ void WenceslasII::exportHTML(bool order, bool selection)
         
     // Print results sorted by order
     } else {
-        std::sort(records.begin(), records.end(), ByOrder);
-        
         stream << "<html>" << Qt::endl << "<ol>" << Qt::endl;
         for (it = records.constBegin(); it != records.constEnd(); ++it){
             stream << recToHTML(*it) << Qt::endl;
@@ -747,10 +835,36 @@ void WenceslasII::exportHTML(bool order, bool selection)
     }
     
     // Now write the content
-    
     stream.flush();
     file.close();
 }
+
+void WenceslasII::print(bool order, bool selection)
+{
+    // Populate records by selected or all rows
+    QList<EvalTableModel::Record> records;
+    extractRecs(records, order, selection);
+    
+    if (records.length() > 0) {
+        // Convert records to list of maps
+        QList<QMap<QString, QString>> values;
+        for (EvalTableModel::Record rec : records) {
+            QMap<QString, QString> map;
+            QString namesurname = rec.value(1).toString() % " " % rec.value(2).toString();
+            map.insert("namesurname", namesurname);
+            map.insert("name", rec.value(1).toString());
+            map.insert("surname", rec.value(2).toString());
+            map.insert("category", cats.byId(rec.value(6).toInt()).toString());
+            map.insert("time", formatTime(rec.value(7).toUInt()));
+            values.append(map);
+        }
+        
+        delete printPreview;
+        printPreview = new PrintingWindow(values);
+        printPreview->show();
+    }
+}
+
 
 QModelIndex WenceslasII::findItem(QAbstractTableModel* model, int col, QVariant val)
 // Search model for row whose column col has a specified value. Return the corresponding model index.
@@ -788,14 +902,17 @@ void WenceslasII::openFile()
         QMessageBox::warning(this, tr("Chyba"), text);
         return;
     } else {
+        // Older databases may lack the timer table
+        if (!createTimerTable()) {
+            QString text = tr("Nepodařilo se vytvořit tabulku stopek v databázi %1").arg(path);
+            QMessageBox::warning(this, tr("Chyba"), text);
+        }
+        
         // Setup table for registration
         setupRegTable();
         
         // Setup table for time
         setupTimeTable();
-        
-        // Setup table for results
-        setupEvalTable();
         
         // Show status bar message
         QString text = tr("Otevřen soubor %1").arg(path);
@@ -868,6 +985,8 @@ void WenceslasII::newFile()
             "'operator' TEXT,"
             "PRIMARY KEY('key' AUTOINCREMENT))");
         ret = ret && query.exec();
+        
+        ret = ret && createTimerTable();
         
         if (ret == false) {
             qDebug() << "Unable to initialize the database!";
@@ -1040,6 +1159,17 @@ void WenceslasII::actionExportHTML3()
     exportHTML(true, true);
 }
 
+void WenceslasII::actionPrint()
+{
+    print(true, false);
+}
+
+void WenceslasII::actionPrintSelection()
+{
+    print(true, true);
+}
+
+
 void WenceslasII::createRecord()
 {
     if (regModel == NULL) {
@@ -1047,16 +1177,17 @@ void WenceslasII::createRecord()
         return;
     }
     
+    if (!checkRecord(-1)) return;
+    
     QSqlRecord rec = regModel->record();
     rec.setGenerated("key", false);
     rec.setValue("id", ui->id->value());
     rec.setValue("first_name", ui->name->text());
     rec.setValue("surname", ui->surname->text());
     rec.setValue("address", ui->address->text());
-    rec.setValue("woman", ui->woman->isChecked());
+    rec.setValue("woman", ui->gender->isChecked());
     rec.setValue("age", ui->age->value());
     rec.setValue("operator", op_name);
-    
     
     // Create new record
     int row = regModel->rowCount();
@@ -1069,21 +1200,28 @@ void WenceslasII::createRecord()
         QMessageBox::warning(this, tr("Chyba"), text);
     }
     
-    // Needed to render the header correctly
-    //FilterTableHeader *header = (FilterTableHeader *)ui->regTable->horizontalHeader();
-    //header->adjustPositions();
-    
-    // Discard the data in forms (increment ID)
-    int current_id = ui->id->value();
-    mapper->revert();
-    ui->id->setValue(current_id + 1);
-    ui->name->setFocus();
-    
-    // Scroll to the new record
+    // Select the new record
     QModelIndex index = regModel->index(row, 1);
     QModelIndex mapped = regSortProxy->mapFromSource(index);
-    //ui->regTable->selectRow(mapped.row());
-    ui->regTable->scrollTo(mapped);
+    ui->regTable->selectRow(mapped.row());
+    ui->regTable->scrollTo(mapped, QAbstractItemView::EnsureVisible);
+}
+
+
+void WenceslasII::clearRecord()
+{
+    // Unselect the current row so that correct has no record to overwrite
+    ui->regTable->setCurrentIndex(QModelIndex());
+    ui->regTable->clearSelection();
+    
+    // Clear the data in forms
+    ui->name->clear();
+    ui->surname->clear();
+    ui->address->clear();
+    ui->id->setValue(ui->id->minimum());
+    ui->age->setValue(ui->age->minimum());
+    ui->gender->setChecked(false);
+    ui->gender->setFocus();
 }
 
 
@@ -1139,6 +1277,13 @@ void WenceslasII::correctRecord()
         qDebug() << "Registration model or mapper is null!";
         return;
     }
+    
+    // Correct only a row selected by the user
+    if (!ui->regTable->selectionModel()->hasSelection()) return;
+    
+    int key = regSortProxy->index(mapper->currentIndex(), 0).data().toInt();
+    if (!checkRecord(key)) return;
+    
     bool ret = mapper->submit();
     if (ret == false) {
         qDebug() << "Data mapper submit failed!";
@@ -1155,7 +1300,7 @@ void WenceslasII::correctRecord()
 
 void WenceslasII::regOriginalOrder()
 {
-    ui->regTable->sortByColumn(0, Qt::SortOrder::DescendingOrder);
+    ui->regTable->sortByColumn(0, Qt::SortOrder::AscendingOrder);
 }
 
 void WenceslasII::timeOriginalOrder()
@@ -1193,6 +1338,7 @@ void WenceslasII::startTimer()
         // Start timer
         elapsed_timer.start();
         timer.start(10);
+        saveStartTime();
     }
 }
 
@@ -1200,6 +1346,55 @@ void WenceslasII::clearTimer()
 {
     last_ms = 0;
     updateClock();
+}
+
+bool WenceslasII::createTimerTable()
+{
+    // Single-row table with the wall-clock time (ms since epoch) at which the stopwatch reads zero
+    QSqlQuery query(QSqlDatabase::database("primary"));
+    bool ret = query.exec("CREATE TABLE IF NOT EXISTS 'timer' ("
+        "'id' INTEGER PRIMARY KEY CHECK (id = 0),"
+        "'start' INTEGER)");
+    if (!ret) {
+        qDebug() << "Unable to create the timer table!";
+        qDebug() << query.lastError();
+    }
+    return ret;
+}
+
+void WenceslasII::saveStartTime()
+{
+    QSqlDatabase db = QSqlDatabase::database("primary", false);
+    if (!db.isOpen()) return;
+    
+    // Subtract the time already on the clock, in case the timer is resumed after a stop
+    QSqlQuery query(db);
+    query.prepare("INSERT OR REPLACE INTO 'timer' ('id', 'start') VALUES (0, ?)");
+    query.addBindValue(QDateTime::currentMSecsSinceEpoch() - last_ms);
+    if (!query.exec()) {
+        qDebug() << "Unable to save timer start!";
+        qDebug() << query.lastError();
+    }
+}
+
+void WenceslasII::restoreTimer()
+{
+    QSqlQuery query(QSqlDatabase::database("primary"));
+    if (!query.exec("SELECT start FROM 'timer' WHERE id = 0") || !query.next()) {
+        QString text = tr("V databázi není uložen čas startu stopek.");
+        QMessageBox::warning(this, tr("Chyba"), text);
+        return;
+    }
+    
+    last_ms = QDateTime::currentMSecsSinceEpoch() - query.value(0).toLongLong();
+    
+    // Disable clear button and change label
+    ui->clear_timer->setEnabled(false);
+    ui->start_timer->setText("Stop");
+    
+    // Start timer
+    elapsed_timer.start();
+    timer.start(10);
 }
 
 void WenceslasII::updateClock()
@@ -1238,7 +1433,7 @@ void WenceslasII::recordTime()
     int row = timeModel->rowCount();
     bool ret = timeModel->insertRecord(row, rec);
     if (!ret) {
-        qDebug() << "Unable to insert record:";
+        qDebug() << "Unable to insert record at row " << row;
         qDebug() << timeModel->lastError();
         
         QString text = tr("Nepodařilo se vložit záznam. Databáze může být poškozena.");
@@ -1247,9 +1442,9 @@ void WenceslasII::recordTime()
     
     // Scroll to the new record
     QModelIndex index = timeModel->index(row, 1);
-    QModelIndex mapped = timeSortProxy->mapFromSource(index);
+    QModelIndex mapped = timeSortProxy->mapFromSource(joinTimeEvalProxy->mapFromSource(index));
     //ui->regTable->selectRow(mapped.row());
-    ui->regTable->scrollTo(mapped);
+    ui->timeTable->scrollTo(mapped);
     
     // Choose next item for editing if any
     timeTableEdit();
@@ -1319,9 +1514,6 @@ void WenceslasII::evaluate()
     QSqlDatabase primary = QSqlDatabase::database("primary");
     if (!primary.isOpen()) return;
     
-    // Clear the results table
-    evalModel->removeRows(0, evalModel->rowCount(), QModelIndex());
-    
     // Clear the conflict list
     ui->evalList->clear();
     
@@ -1336,6 +1528,8 @@ void WenceslasII::evaluate()
     if (!ret) {
         qDebug() << "Eval runners failed query!";
         qDebug() << query.lastError();
+        evalFailed = true;
+        updateEvalIndicators();
         return;
     }
     
@@ -1351,6 +1545,8 @@ void WenceslasII::evaluate()
     if (!ret) {
         qDebug() << "Eval times failed query!";
         qDebug() << query.lastError();
+        evalFailed = true;
+        updateEvalIndicators();
         return;
     }
     
@@ -1361,6 +1557,7 @@ void WenceslasII::evaluate()
     
     // Find complete information for each id =========
     QList<EvalTableModel::Record> records;
+    bool failed = false;
     bool insert_record;
     MyCategory currentCategory;
     QSet<int>::const_iterator it;
@@ -1375,6 +1572,7 @@ void WenceslasII::evaluate()
         if (!ret) {
             qDebug() << "Find runner info failed query!";
             qDebug() << query.lastError();
+            failed = true;
             continue;
         }
         
@@ -1434,6 +1632,7 @@ void WenceslasII::evaluate()
         if (!ret) {
             qDebug() << "Find times failed query!";
             qDebug() << query.lastError();
+            failed = true;
             continue;
         }
         
@@ -1527,23 +1726,81 @@ void WenceslasII::evaluate()
         it1->setValue(9, order_category[cid]);
     }
     
-    // Assign overall order & insert into evalModel
+    // Assign overall order
     std::sort(records.begin(), records.end(), ByOrder);
     
     int order = 1;
     for (it1=records.begin(); it1 != records.end(); ++it1){
         it1->setValue(8, order);
-        
-        // FIXME: Check error
-        ret = evalModel->insertRecord(evalModel->rowCount(), *it1);
-        if (ret == false) {
-            qDebug() << "Insert record failed!";
-        }
-        
         order++;
     }
     
+    // Replace the results at once
+    evalModel->setRecords(records);
+    
+    evalTime = QTime::currentTime();
+    evalFailed = failed;
+    evalOutdated = false;
+    updateEvalIndicators();
 }
+
+void WenceslasII::autoEvalToggled(bool checked)
+{
+    if (checked) {
+        ui->auto_eval->setText(tr("Zapnuto"));
+        evaluate();
+        evalTimer.start();
+    } else {
+        ui->auto_eval->setText(tr("Vypnuto"));
+        evalTimer.stop();
+    }
+}
+
+void WenceslasII::markEvalOutdated()
+{
+    evalOutdated = true;
+    updateEvalIndicators();
+}
+
+void WenceslasII::updateEvalIndicators()
+{
+    // Up-to-date indicator, the details are shown in the tooltip
+    QString timeStr = evalTime.toString("HH:mm:ss");
+    if (evalFailed) {
+        ui->eval_status->setColor(Qt::red);
+        ui->eval_status->on();
+        ui->eval_status->setToolTip(tr("Vyhodnocení selhalo"));
+    } else if (evalTime.isNull()) {
+        ui->eval_status->setColor(Qt::green);
+        ui->eval_status->off();
+        ui->eval_status->setToolTip(tr("Nevyhodnoceno"));
+    } else if (evalOutdated) {
+        ui->eval_status->setColor(QColor(255, 165, 0));
+        ui->eval_status->on();
+        ui->eval_status->setToolTip(tr("Výsledky neaktuální (vyhodnoceno %1)").arg(timeStr));
+    } else {
+        ui->eval_status->setColor(Qt::green);
+        ui->eval_status->on();
+        ui->eval_status->setToolTip(tr("Výsledky aktuální (vyhodnoceno %1)").arg(timeStr));
+    }
+    
+    // Conflicts indicator
+    int conflicts = ui->evalList->count();
+    if (evalTime.isNull()) {
+        ui->eval_errors->setColor(Qt::green);
+        ui->eval_errors->off();
+        ui->eval_errors->setToolTip(tr("Nevyhodnoceno"));
+    } else if (conflicts > 0) {
+        ui->eval_errors->setColor(Qt::red);
+        ui->eval_errors->on();
+        ui->eval_errors->setToolTip(tr("Konflikty: %1").arg(conflicts));
+    } else {
+        ui->eval_errors->setColor(Qt::green);
+        ui->eval_errors->on();
+        ui->eval_errors->setToolTip(tr("Bez konfliktů"));
+    }
+}
+
 
 void WenceslasII::tabChanged(int index)
 {
@@ -1583,7 +1840,7 @@ void WenceslasII::conflictActivated(QListWidgetItem *item)
         ui->timeTable->setFocus();
 
         QModelIndex index = findItem(timeModel, 1, QVariant::fromValue(desc.id));
-        QModelIndex mapped = timeSortProxy->mapFromSource(index);
+        QModelIndex mapped = timeSortProxy->mapFromSource(joinTimeEvalProxy->mapFromSource(index));
         ui->timeTable->selectRow(mapped.row());
         
     } else if (desc.type == ConflictDesc::NoTime){
@@ -1596,7 +1853,7 @@ void WenceslasII::conflictActivated(QListWidgetItem *item)
         ui->timeTable->setFocus();
         
         QModelIndex index = findItem(timeModel, 1, QVariant::fromValue(desc.id));
-        QModelIndex mapped = timeSortProxy->mapFromSource(index);
+        QModelIndex mapped = timeSortProxy->mapFromSource(joinTimeEvalProxy->mapFromSource(index));
         ui->timeTable->selectRow(mapped.row());
         
     } else {
@@ -1618,6 +1875,16 @@ void WenceslasII::evalCategoryIndexChanged(int index)
         evalSortProxy->addFilter(6, data);
     }
 }
+
+void WenceslasII::genderToggled(bool checked)
+{
+    if (checked) {
+        ui->gender->setText(tr("žena"));
+    } else {
+        ui->gender->setText(tr("muž"));
+    }
+}
+
 
 void WenceslasII::regDimensionChanged(const QModelIndex& parent, int first, int last)
 {
