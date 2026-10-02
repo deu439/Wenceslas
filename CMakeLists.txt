@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(Wenceslas)
 
 # Find includes in corresponding build directories
@@ -43,7 +43,7 @@ set(wenceslasii_SRC
 qt5_wrap_ui(wenceslasii_SRC src/wenceslasii.ui src/printingwindow.ui)
 
 # Tell CMake to create the helloworld executable
-add_executable(wenceslasii ${wenceslasii_SRC} resources.qrc)
+add_executable(wenceslasii WIN32 ${wenceslasii_SRC} resources.qrc)
 target_include_directories(wenceslasii PRIVATE src)
 
 # Use the Widgets module from Qt 5.
