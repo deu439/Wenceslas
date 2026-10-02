@@ -135,6 +135,7 @@ WenceslasII::WenceslasII(QWidget* parent) :
     connect(ui->remove_time, &QPushButton::clicked, this, &WenceslasII::removeTime);
     connect(ui->reg_original_order, &QPushButton::clicked, this, &WenceslasII::regOriginalOrder);
     connect(ui->eval, &QPushButton::clicked, this, &WenceslasII::evaluate);
+    connect(ui->time_eval, &QPushButton::clicked, this, &WenceslasII::evaluate);
     connect(ui->tabWidget, &QTabWidget::currentChanged, this, &WenceslasII::tabChanged);
     tabChanged(ui->tabWidget->currentIndex()); // The initial tab emits no currentChanged
     //connect(ui->reg_clear_filters, &QPushButton::clicked, this, &WenceslasII::clearRegFilters);
@@ -150,7 +151,10 @@ WenceslasII::WenceslasII(QWidget* parent) :
     // Setup automatic evaluation
     evalTimer.setInterval(5000);
     connect(&evalTimer, &QTimer::timeout, this, &WenceslasII::evaluate);
-    connect(ui->auto_eval, &QPushButton::toggled, this, &WenceslasII::autoEvalToggled);
+    connect(ui->auto_eval, &QCheckBox::toggled, this, &WenceslasII::autoEvalToggled);
+    // Keep the checkbox copies in both tabs in sync (setChecked emits nothing if unchanged)
+    connect(ui->auto_eval, &QCheckBox::toggled, ui->time_auto_eval, &QCheckBox::setChecked);
+    connect(ui->time_auto_eval, &QCheckBox::toggled, ui->auto_eval, &QCheckBox::setChecked);
     
     loadSettings();
     loadNames();
@@ -371,7 +375,8 @@ void WenceslasII::enableButtons()
     ui->reg_original_order->setEnabled(true);
     
     // Time tab
-    ui->auto_eval->setEnabled(true);
+    ui->time_eval->setEnabled(true);
+    ui->time_auto_eval->setEnabled(true);
     ui->restore_timer->setEnabled(true);
     ui->record_time->setEnabled(true);
     ui->remove_time->setEnabled(true);
@@ -379,6 +384,7 @@ void WenceslasII::enableButtons()
     
     // Eval table
     ui->eval->setEnabled(true);
+    ui->auto_eval->setEnabled(true);
     ui->eval_original_order->setEnabled(true);
 
     // Enable all actions
@@ -559,6 +565,11 @@ void WenceslasII::setupTimeTable()
     ui->timeTable->setColumnWidth(1, 40);
     ui->timeTable->setColumnWidth(2, 80);
     ui->timeTable->setColumnWidth(3, 80);
+    // Hide the joined evaluation columns duplicating the time record ("ID" and "Čas")
+    int joinOffset = timeModel->columnCount();
+    ui->timeTable->hideColumn(joinOffset + 0);
+    ui->timeTable->hideColumn(joinOffset + 7);
+    ui->timeTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->timeTable->verticalHeader()->setVisible(false);
     
     connect(idDelegate, SIGNAL(closeEditor(QWidget*,QAbstractItemDelegate::EndEditHint)), 
@@ -1012,10 +1023,7 @@ void WenceslasII::newFile()
         
         // Setup table for time
         setupTimeTable();
-        
-        // Setup table for results
-        setupEvalTable();
-        
+
         // Show status bar message
         QString text = tr("Otevřen soubor %1").arg(path);
         ui->statusbar->showMessage(text);
@@ -1792,11 +1800,9 @@ void WenceslasII::evaluate()
 void WenceslasII::autoEvalToggled(bool checked)
 {
     if (checked) {
-        ui->auto_eval->setText(tr("Zapnuto"));
         evaluate();
         evalTimer.start();
     } else {
-        ui->auto_eval->setText(tr("Vypnuto"));
         evalTimer.stop();
     }
 }
@@ -1809,40 +1815,37 @@ void WenceslasII::markEvalOutdated()
 
 void WenceslasII::updateEvalIndicators()
 {
+    // The indicators exist in both the time and the evaluation tab
+    auto setLeds = [](std::initializer_list<KLed*> leds, const QColor &color, bool on, const QString &tip) {
+        for (KLed *led : leds) {
+            led->setColor(color);
+            led->setState(on ? KLed::On : KLed::Off);
+            led->setToolTip(tip);
+        }
+    };
+    
     // Up-to-date indicator, the details are shown in the tooltip
     QString timeStr = evalTime.toString("HH:mm:ss");
+    auto status = {ui->eval_status, ui->time_eval_status};
     if (evalFailed) {
-        ui->eval_status->setColor(Qt::red);
-        ui->eval_status->on();
-        ui->eval_status->setToolTip(tr("Vyhodnocení selhalo"));
+        setLeds(status, Qt::red, true, tr("Vyhodnocení selhalo"));
     } else if (evalTime.isNull()) {
-        ui->eval_status->setColor(Qt::green);
-        ui->eval_status->off();
-        ui->eval_status->setToolTip(tr("Nevyhodnoceno"));
+        setLeds(status, Qt::green, false, tr("Nevyhodnoceno"));
     } else if (evalOutdated) {
-        ui->eval_status->setColor(QColor(255, 165, 0));
-        ui->eval_status->on();
-        ui->eval_status->setToolTip(tr("Výsledky neaktuální (vyhodnoceno %1)").arg(timeStr));
+        setLeds(status, QColor(255, 165, 0), true, tr("Výsledky neaktuální (vyhodnoceno %1)").arg(timeStr));
     } else {
-        ui->eval_status->setColor(Qt::green);
-        ui->eval_status->on();
-        ui->eval_status->setToolTip(tr("Výsledky aktuální (vyhodnoceno %1)").arg(timeStr));
+        setLeds(status, Qt::green, true, tr("Výsledky aktuální (vyhodnoceno %1)").arg(timeStr));
     }
     
     // Conflicts indicator
     int conflicts = ui->evalList->count();
+    auto errors = {ui->eval_errors, ui->time_eval_errors};
     if (evalTime.isNull()) {
-        ui->eval_errors->setColor(Qt::green);
-        ui->eval_errors->off();
-        ui->eval_errors->setToolTip(tr("Nevyhodnoceno"));
+        setLeds(errors, Qt::green, false, tr("Nevyhodnoceno"));
     } else if (conflicts > 0) {
-        ui->eval_errors->setColor(Qt::red);
-        ui->eval_errors->on();
-        ui->eval_errors->setToolTip(tr("Konflikty: %1").arg(conflicts));
+        setLeds(errors, Qt::red, true, tr("Konflikty: %1").arg(conflicts));
     } else {
-        ui->eval_errors->setColor(Qt::green);
-        ui->eval_errors->on();
-        ui->eval_errors->setToolTip(tr("Bez konfliktů"));
+        setLeds(errors, Qt::green, true, tr("Bez konfliktů"));
     }
 }
 

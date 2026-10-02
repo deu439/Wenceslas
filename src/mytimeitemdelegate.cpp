@@ -98,6 +98,9 @@ void MyTimeItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& op
         if (option.state & QStyle::State_Selected) {
             bg = option.palette.color(QPalette::Highlight);
             fg = option.palette.color(QPalette::HighlightedText);
+        } else if (option.features & QStyleOptionViewItem::Alternate) {
+            bg = option.palette.color(QPalette::AlternateBase);
+            fg = option.palette.color(QPalette::Text);
         } else {
             bg = option.palette.color(QPalette::Base);
             fg = option.palette.color(QPalette::Text);
