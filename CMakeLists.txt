@@ -14,7 +14,6 @@ find_package(Qt5Widgets REQUIRED)
 find_package(Qt5Sql REQUIRED)
 find_package(Qt5Network REQUIRED)
 find_package(Qt5PrintSupport REQUIRED)
-find_package(KF5WidgetsAddons REQUIRED)
 
 # 3. Find Poppler-Qt5 using PkgConfig
 find_package(PkgConfig REQUIRED)
@@ -36,6 +35,7 @@ set(wenceslasii_SRC
   src/uploadresultsdialog.cpp
   src/printingwindow.cpp
   src/joinproxymodel.cpp
+  src/statusled.cpp
 )
 
 # Create code from a list of Qt designer ui files.
@@ -44,9 +44,10 @@ qt5_wrap_ui(wenceslasii_SRC src/wenceslasii.ui src/printingwindow.ui)
 
 # Tell CMake to create the helloworld executable
 add_executable(wenceslasii ${wenceslasii_SRC} resources.qrc)
+target_include_directories(wenceslasii PRIVATE src)
 
 # Use the Widgets module from Qt 5.
-target_link_libraries(wenceslasii Qt5::Widgets Qt5::Sql Qt5::Network Qt5::PrintSupport KF5::WidgetsAddons PkgConfig::POPPLER_QT5)
+target_link_libraries(wenceslasii Qt5::Widgets Qt5::Sql Qt5::Network Qt5::PrintSupport PkgConfig::POPPLER_QT5)
 
 # Install the executable
 install(TARGETS wenceslasii DESTINATION bin)

@@ -1816,10 +1816,10 @@ void WenceslasII::markEvalOutdated()
 void WenceslasII::updateEvalIndicators()
 {
     // The indicators exist in both the time and the evaluation tab
-    auto setLeds = [](std::initializer_list<KLed*> leds, const QColor &color, bool on, const QString &tip) {
-        for (KLed *led : leds) {
+    auto setLeds = [](std::initializer_list<StatusLed*> leds, const QColor &color, bool on, const QString &tip) {
+        for (StatusLed *led : leds) {
             led->setColor(color);
-            led->setState(on ? KLed::On : KLed::Off);
+            led->setState(on ? StatusLed::On : StatusLed::Off);
             led->setToolTip(tip);
         }
     };
