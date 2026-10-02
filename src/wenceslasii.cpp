@@ -100,7 +100,16 @@ WenceslasII::WenceslasII(QWidget* parent) :
     timer(parent)
 {
     ui->setupUi(this);
-    
+
+    // Show the selection in tables without focus, too (e.g. a new record while
+    // typing in the form); the Windows style draws it barely visible otherwise
+    for (QTableView *table : {ui->regTable, ui->timeTable, ui->evalTable}) {
+        QPalette pal = table->palette();
+        pal.setColor(QPalette::Inactive, QPalette::Highlight, pal.color(QPalette::Active, QPalette::Highlight));
+        pal.setColor(QPalette::Inactive, QPalette::HighlightedText, pal.color(QPalette::Active, QPalette::HighlightedText));
+        table->setPalette(pal);
+    }
+
     // Setup main menu
     connect(ui->actionOpen, &QAction::triggered, this, &WenceslasII::openFile);
     connect(ui->actionNew, &QAction::triggered, this, &WenceslasII::newFile);
