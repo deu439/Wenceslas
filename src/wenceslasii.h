@@ -106,6 +106,7 @@ private:
     void print(bool order = false, bool selection = false);
     QModelIndex findItem(QAbstractTableModel *model, int col, QVariant val);
     bool createTimerTable();
+    bool createIndexes();
     void saveStartTime();
     void updateEvalIndicators();
     

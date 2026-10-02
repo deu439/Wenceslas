@@ -938,6 +938,9 @@ void WenceslasII::openFile()
             QMessageBox::warning(this, tr("Chyba"), text);
         }
         
+        // Older databases may lack the indexes; the app works without them, only slower
+        createIndexes();
+        
         // Setup table for registration
         setupRegTable();
         
@@ -1017,6 +1020,7 @@ void WenceslasII::newFile()
         ret = ret && query.exec();
         
         ret = ret && createTimerTable();
+        ret = ret && createIndexes();
         
         if (ret == false) {
             qDebug() << "Unable to initialize the database!";
@@ -1419,6 +1423,19 @@ bool WenceslasII::createTimerTable()
         "'start' INTEGER)");
     if (!ret) {
         qDebug() << "Unable to create the timer table!";
+        qDebug() << query.lastError();
+    }
+    return ret;
+}
+
+bool WenceslasII::createIndexes()
+{
+    // Indexes for looking up runners and times by start number (used by evaluate())
+    QSqlQuery query(QSqlDatabase::database("primary"));
+    bool ret = query.exec("CREATE INDEX IF NOT EXISTS 'runners_id' ON 'runners' ('id')")
+            && query.exec("CREATE INDEX IF NOT EXISTS 'times_id' ON 'times' ('id')");
+    if (!ret) {
+        qDebug() << "Unable to create the indexes!";
         qDebug() << query.lastError();
     }
     return ret;
