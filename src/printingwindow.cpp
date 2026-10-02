@@ -26,6 +26,7 @@ PrintingWindow::PrintingWindow(const QList<QMap<QString, QString>> &fieldValues,
     connect(ui->current, QOverload<int>::of(&QSpinBox::valueChanged), this, &PrintingWindow::changed);
     connect(ui->print, &QPushButton::clicked, this, &PrintingWindow::print);
     connect(ui->chooseTemplate, &QPushButton::clicked, this, &PrintingWindow::chooseTemplate);
+    connect(ui->cancel, &QPushButton::clicked, this, &PrintingWindow::close);
     
     // Load the last used template, if any
     QSettings set("config.ini", QSettings::IniFormat);
